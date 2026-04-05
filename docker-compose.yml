@@ -17,6 +17,7 @@ services:
     environment:
       - MONGO_URI=mongodb://mongo:27017/feedpulse
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=gemini-2.5-flash
       - JWT_SECRET=${JWT_SECRET:-feedpulse-jwt-secret-2024}
       - FRONTEND_URL=http://localhost:3000
       - PORT=4000
