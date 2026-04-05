@@ -16,7 +16,7 @@ interface AIWeeklySummary {
 
 class GeminiService {
   private model: any;
-  private modelName: string;
+  private modelName: string = "";
 
   constructor() {
     const apiKey = process.env.GEMINI_API_KEY;

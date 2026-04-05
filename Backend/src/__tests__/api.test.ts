@@ -1,45 +1,42 @@
 import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
-import express from "express";
+import express, { type Application } from "express";
 import request from "supertest";
 import jwt from "jsonwebtoken";
+import { beforeAll, afterAll, afterEach, describe, it, expect } from "@jest/globals";
 
-// Setup in-memory MongoDB
+// Set env vars BEFORE any app module imports
+process.env.JWT_SECRET = "test-secret";
+process.env.GEMINI_API_KEY = "";
+process.env.GEMINI_MODEL = "gemini-1.5-flash";
+
+// Static imports — env is already configured above
+import feedbackRoutes from "../routes/feedback.routes";
+import authRoutes from "../routes/auth.routes";
+import { sanitizeInput } from "../middleware/sanitize.middleware";
+import Feedback from "../models/feedback.model";
+import User from "../models/user.model";
+import { geminiService } from "../services/gemini.service";
+
 let mongoServer: MongoMemoryServer;
-
-// We need to build a test app
-const buildApp = async () => {
-  // Set env vars before importing modules
-  process.env.JWT_SECRET = "test-secret";
-  process.env.GEMINI_API_KEY = ""; // disable AI in tests
-
-  const app = express();
-  app.use(express.json());
-
-  // Dynamic imports after env is set
-  const feedbackRoutes = (await import("../routes/feedback.routes")).default;
-  const authRoutes = (await import("../routes/auth.routes")).default;
-  const { sanitizeInput } = await import("../middleware/sanitize.middleware");
-
-  app.use(sanitizeInput);
-  app.use("/api/feedback", feedbackRoutes);
-  app.use("/api/auth", authRoutes);
-
-  return app;
-};
-
-let app: express.Application;
+let app: Application;
 let adminToken: string;
+
+function createApp(): Application {
+  const testApp = express();
+  testApp.use(express.json());
+  testApp.use(sanitizeInput);
+  testApp.use("/api/feedback", feedbackRoutes);
+  testApp.use("/api/auth", authRoutes);
+  return testApp;
+}
 
 beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
-  const uri = mongoServer.getUri();
-  await mongoose.connect(uri);
+  await mongoose.connect(mongoServer.getUri());
 
-  app = await buildApp();
+  app = createApp();
 
-  // Create admin user
-  const User = (await import("../models/user.model")).default;
   await User.create({
     email: "admin@feedpulse.com",
     password: "admin123",
@@ -47,32 +44,32 @@ beforeAll(async () => {
     role: "admin",
   });
 
-  // Generate token
   adminToken = jwt.sign(
     { userId: "testid", role: "admin" },
-    "test-secret",
+    process.env.JWT_SECRET!,
     { expiresIn: "1h" }
   );
 });
 
 afterAll(async () => {
+  await mongoose.connection.dropDatabase();
   await mongoose.disconnect();
   await mongoServer.stop();
 });
 
 afterEach(async () => {
-  const Feedback = (await import("../models/feedback.model")).default;
   await Feedback.deleteMany({});
 });
 
+// ─── Feedback Submission ────────────────────
 describe("POST /api/feedback", () => {
-  // Test 1: Valid submission saves to DB
   it("should create feedback with valid data", async () => {
     const res = await request(app)
       .post("/api/feedback")
       .send({
         title: "Test feedback title",
-        description: "This is a detailed description that is at least twenty characters long.",
+        description:
+          "This is a detailed description that is at least twenty characters long for validation.",
         category: "Bug",
         submitterName: "Test User",
         submitterEmail: "test@example.com",
@@ -80,18 +77,19 @@ describe("POST /api/feedback", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
+    expect(res.body.data).toBeDefined();
     expect(res.body.data.title).toBe("Test feedback title");
     expect(res.body.data.status).toBe("New");
     expect(res.body.data.category).toBe("Bug");
   });
 
-  // Test 2: Rejects empty title
   it("should reject feedback with empty title", async () => {
     const res = await request(app)
       .post("/api/feedback")
       .send({
         title: "",
-        description: "This is a detailed description that is at least twenty characters long.",
+        description:
+          "This is a detailed description that is at least twenty characters long for validation.",
         category: "Bug",
       });
 
@@ -99,12 +97,11 @@ describe("POST /api/feedback", () => {
     expect(res.body.success).toBe(false);
   });
 
-  // Test 3: Rejects short description
   it("should reject feedback with description under 20 characters", async () => {
     const res = await request(app)
       .post("/api/feedback")
       .send({
-        title: "Test title",
+        title: "Valid title here",
         description: "Too short",
         category: "Bug",
       });
@@ -113,13 +110,13 @@ describe("POST /api/feedback", () => {
     expect(res.body.success).toBe(false);
   });
 
-  // Test 4: Rejects invalid category
   it("should reject feedback with invalid category", async () => {
     const res = await request(app)
       .post("/api/feedback")
       .send({
-        title: "Test title",
-        description: "This is a detailed description that is at least twenty characters long.",
+        title: "Valid title here",
+        description:
+          "This is a detailed description that is at least twenty characters long for validation.",
         category: "InvalidCategory",
       });
 
@@ -128,13 +125,13 @@ describe("POST /api/feedback", () => {
   });
 });
 
+// ─── Status Update ──────────────────────────
 describe("PATCH /api/feedback/:id", () => {
-  // Test 5: Status update works correctly
   it("should update feedback status with valid auth", async () => {
-    const Feedback = (await import("../models/feedback.model")).default;
     const feedback = await Feedback.create({
       title: "Test item for status update",
-      description: "This is a detailed description for testing status update functionality.",
+      description:
+        "This is a detailed description for testing the status update functionality properly.",
       category: "Feature Request",
     });
 
@@ -149,37 +146,33 @@ describe("PATCH /api/feedback/:id", () => {
   });
 });
 
+// ─── Auth Middleware ─────────────────────────
 describe("Auth Middleware", () => {
-  // Test 6: Protected routes reject unauthenticated requests
   it("should reject requests without token", async () => {
     const res = await request(app).get("/api/feedback");
     expect(res.status).toBe(401);
     expect(res.body.success).toBe(false);
   });
 
-  // Test 7: Protected routes reject invalid tokens
   it("should reject requests with invalid token", async () => {
     const res = await request(app)
       .get("/api/feedback")
-      .set("Authorization", "Bearer invalid-token-here");
-
+      .set("Authorization", "Bearer totally-invalid-token");
     expect(res.status).toBe(401);
     expect(res.body.success).toBe(false);
   });
 
-  // Test 8: Protected routes accept valid tokens
   it("should accept requests with valid token", async () => {
     const res = await request(app)
       .get("/api/feedback")
       .set("Authorization", `Bearer ${adminToken}`);
-
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
   });
 });
 
+// ─── Admin Login ─────────────────────────────
 describe("POST /api/auth/login", () => {
-  // Test 9: Login with valid credentials
   it("should return token for valid credentials", async () => {
     const res = await request(app)
       .post("/api/auth/login")
@@ -188,28 +181,25 @@ describe("POST /api/auth/login", () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.token).toBeDefined();
+    expect(res.body.data.user.email).toBe("admin@feedpulse.com");
   });
 
-  // Test 10: Login with invalid credentials
   it("should reject invalid credentials", async () => {
     const res = await request(app)
       .post("/api/auth/login")
       .send({ email: "admin@feedpulse.com", password: "wrongpassword" });
-
     expect(res.status).toBe(401);
     expect(res.body.success).toBe(false);
   });
 });
 
+// ─── Gemini Service ──────────────────────────
 describe("Gemini Service", () => {
-  // Test 11: Gemini service handles missing API key gracefully
   it("should return null when API key is not set", async () => {
-    const { geminiService } = await import("../services/gemini.service");
     const result = await geminiService.analyzeFeedback(
       "Test title",
-      "Test description for analysis"
+      "Test description that is long enough for analysis"
     );
-    // Without API key, should return null gracefully
     expect(result).toBeNull();
   });
 });

@@ -6,6 +6,8 @@
 ![FeedPulse Screenshot - Admin Dashboard](screenshots/dashboard.png)
 ![FeedPulse Screenshot - AI Summary](screenshots/aisummary.png)
 ![FeedPulse Screenshot - Admin Login](screenshots/adminlogin.png)
+![FeedPulse Screenshot - Docker Services](screenshots/dockerservices.png)
+![FeedPulse Screenshot - Admin Login](screenshots/test.png)
 
 
 ---
