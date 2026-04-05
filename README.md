@@ -4,6 +4,9 @@
 
 ![FeedPulse Screenshot - Submission Form](screenshots/feedback-form.png)
 ![FeedPulse Screenshot - Admin Dashboard](screenshots/dashboard.png)
+![FeedPulse Screenshot - AI Summary](screenshots/aisummary.png)
+![FeedPulse Screenshot - Admin Login](screenshots/adminlogin.png)
+
 
 ---
 

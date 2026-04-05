@@ -78,7 +78,19 @@ export default function HomePage() {
   const descLen = form.description.length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-brand-50">
+    <div className="relative isolate min-h-screen overflow-hidden">
+      {/* Blurred background image layer (non-interactive, behind content) */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+        <div
+          className="absolute inset-0 scale-110 bg-cover bg-center blur-2xl opacity-25"
+          style={{
+            backgroundImage:
+              "url('https://images.pexels.com/photos/32026165/pexels-photo-32026165.jpeg')",
+          }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-50/85 via-white/80 to-brand-50/85" />
+      </div>
+
       {/* Nav */}
       <nav className="sticky top-0 z-50 border-b border-slate-200/60 bg-white/80 backdrop-blur-lg">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
